@@ -10,7 +10,7 @@ import (
 type FileRepo interface {
 	Create(ctx context.Context, file *models.File) error
 	GetByID(ctx context.Context, file *models.File) error
-	Delete(ctx context.Context, file models.File) (bool, error)
+	Delete(ctx context.Context, file *models.File, userid string) (bool, error)
 }
 type Minio interface {
 	Create(ctx context.Context, file *models.File) error
@@ -21,11 +21,13 @@ type FileService struct {
 	Repo  FileRepo
 	Minio Minio
 }
-//конструктор сервиса
+
+// конструктор сервиса
 func New(repo FileRepo, minio Minio) *FileService {
 	return &FileService{Repo: repo, Minio: minio}
 }
-//загружаем файл в пострес и минио
+
+// загружаем файл в пострес и минио
 func (s *FileService) UploadFile(ctx context.Context, file *models.File) error {
 
 	err := s.Repo.Create(ctx, file)
@@ -38,7 +40,8 @@ func (s *FileService) UploadFile(ctx context.Context, file *models.File) error {
 	}
 	return nil
 }
-//поулчаем файл из постреса и минио
+
+// поулчаем файл из постреса и минио
 func (s *FileService) GetFile(ctx context.Context, file *models.File) error {
 
 	err := s.Repo.GetByID(ctx, file)
@@ -51,11 +54,12 @@ func (s *FileService) GetFile(ctx context.Context, file *models.File) error {
 	}
 	return nil
 }
-//удаляем файл из минио и постреса
-func (s *FileService) DeleteFile(ctx context.Context, file models.File) (bool, error) {
-	suc, err := s.Repo.Delete(ctx, file)
-	if err != repository.ErrFailedDeleteFileFromDb {
-		_, err := s.Minio.Delete(ctx, file)
+
+// удаляем файл из минио и постреса
+func (s *FileService) DeleteFile(ctx context.Context, file *models.File, userid string) (bool, error) {
+	suc, err := s.Repo.Delete(ctx, file, userid)
+	if err != repository.ErrFailedDeleteFileFromDb && err != repository.ErrFailedGetFileFromDb && err != repository.ErrhaventPermissionToDeleteFile {
+		_, err := s.Minio.Delete(ctx, *file)
 		if err != nil {
 			return false, err
 		}
@@ -63,7 +67,7 @@ func (s *FileService) DeleteFile(ctx context.Context, file models.File) (bool, e
 	if err != nil {
 		return false, err
 	}
-	suc2, err := s.Minio.Delete(ctx, file)
+	suc2, err := s.Minio.Delete(ctx, *file)
 	if err != nil {
 		return false, err
 	}

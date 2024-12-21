@@ -23,7 +23,7 @@ const (
 type Service interface {
 	UploadFile(ctx context.Context, file *models.File) error
 	GetFile(ctx context.Context, file *models.File) error
-	DeleteFile(ctx context.Context, file models.File) (bool, error)
+	DeleteFile(ctx context.Context, file *models.File, userid string) (bool, error)
 }
 type FileService struct {
 	file.UnimplementedFilesServiceServer
@@ -107,7 +107,7 @@ func (s *FileService) UploadFile(ctx context.Context, req *file.UploadFileReques
 	}
 	f.ContentType = fileType.String()
 
-	resp, err := s.cryptoClient.Encrypt(ctx, &crypto.Request{Data: chunk, SecretPhrase: []byte(f.ID)[:8]})
+	resp, err := s.cryptoClient.Encrypt(ctx, &crypto.Request{Data: chunk, SecretPhrase: []byte(f.ID[:8])})
 
 	if err != nil {
 		s.l.Error(context.Background(), "error", zap.Int("code", int(codes.Internal)),
@@ -170,7 +170,7 @@ func (s *FileService) GetFile(ctx context.Context, req *file.GetFileRequest) (*f
 			return nil, fmt.Errorf("iuser have not permission to get this file")
 		}
 	}
-	resp, err := s.cryptoClient.Decrypt(ctx, &crypto.Request{Data: f.Data.Bytes(), SecretPhrase: []byte(f.ID)[:8]})
+	resp, err := s.cryptoClient.Decrypt(ctx, &crypto.Request{Data: f.Data.Bytes(), SecretPhrase: []byte(f.ID[:8])})
 
 	if err != nil {
 		s.l.Error(context.Background(), "error", zap.Int("code", int(codes.Internal)),
@@ -184,13 +184,23 @@ func (s *FileService) GetFile(ctx context.Context, req *file.GetFileRequest) (*f
 // Обрабатываем грпс запрос на удаление файла
 func (s *FileService) DeleteFile(ctx context.Context, req *file.DeleteFileRequest) (*file.DeleteFileResponse, error) {
 	var f models.File
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		s.l.Error(context.Background(), "error", zap.Int("code", int(codes.InvalidArgument)),
+			zap.String("message", "invalid metadata"))
+		return nil, fmt.Errorf("invalid metadata")
+	}
+	userid := ""
+	for _, id := range md.Get("X-User-ID") {
+		userid = id
+	}
 	f.ID = req.GetId()
 	if f.ID == "" {
 		s.l.Error(context.Background(), "error", zap.Int("code", int(codes.InvalidArgument)),
 			zap.String("message", "invalid file id"))
 		return nil, fmt.Errorf("invalid file id")
 	}
-	ok, err := s.service.DeleteFile(ctx, f)
+	ok, err := s.service.DeleteFile(ctx, &f, userid)
 	if err != nil {
 		s.l.Error(context.Background(), "error", zap.Int("code", int(codes.Unknown)),
 			zap.String("message", err.Error()))

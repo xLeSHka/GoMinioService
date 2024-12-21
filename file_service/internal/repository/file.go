@@ -9,17 +9,21 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"gitlab.crja72.ru/gospec/go19/messanger/file_service/internal/models"
 	"gitlab.crja72.ru/gospec/go19/messanger/file_service/pkg/db/postgres"
+	"gitlab.crja72.ru/gospec/go19/messanger/file_service/pkg/logger"
 	"gitlab.crja72.ru/gospec/go19/messanger/file_service/pkg/utils"
+	"go.uber.org/zap"
 )
 
 type PostgresRepository struct {
 	db *postgres.DB
 }
-//Конструктор репозитория постреса
+
+// Конструктор репозитория постреса
 func NewPostgresRepository(db *postgres.DB) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
-//загружаем данные о файле в базу данных
+
+// загружаем данные о файле в базу данных
 func (fr *PostgresRepository) Create(ctx context.Context, file *models.File) error {
 	err := utils.DoWithTries(func() error {
 		_, err := sq.Insert("files").
@@ -35,7 +39,8 @@ func (fr *PostgresRepository) Create(ctx context.Context, file *models.File) err
 	}, 5, 100*time.Millisecond)
 	return err
 }
-//получаем данные о файле из базы данных
+
+// получаем данные о файле из базы данных
 func (fr *PostgresRepository) GetByID(ctx context.Context, file *models.File) error {
 	err := utils.DoWithTries(func() error {
 		err := sq.Select("name", "content_type", "sender_id", "recipient_id", "size").
@@ -55,19 +60,39 @@ func (fr *PostgresRepository) GetByID(ctx context.Context, file *models.File) er
 	}, 5, 100*time.Millisecond)
 	return err
 }
-//удаляем данные о файле из базы данных
-func (fr *PostgresRepository) Delete(ctx context.Context, file models.File) (bool, error) {
-	err := utils.DoWithTries(func() error {
+
+// удаляем данные о файле из базы данных
+func (fr *PostgresRepository) Delete(ctx context.Context, file *models.File, userid string) (bool, error) {
+	err := sq.Select("sender_id", "recipient_id", "public").
+		From("files").
+		Where(sq.Eq{"id": file.ID}).
+		PlaceholderFormat(sq.Dollar).
+		RunWith(fr.db.Db).
+		QueryRow().
+		Scan(&file.SenderID, &file.RecipientID, &file.Public)
+	if err == sql.ErrNoRows {
+		return false, ErrFailedGetFileFromDb
+	}
+	if err != nil {
+		return false, ErrFailedGetFileFromDb
+	}
+	if !file.Public {
+		if file.SenderID != userid && file.RecipientID != userid {
+			logger.New("files").Error(context.Background(), "user have not permisssion to get this file", zap.String("youtId", userid), zap.String("senderId", file.SenderID), zap.String("recipientId", file.RecipientID))
+			return false, ErrhaventPermissionToDeleteFile
+		}
+	}
+	err = utils.DoWithTries(func() error {
 		res, err := sq.Delete("files").
 			Where(sq.Eq{"id": file.ID}).
 			PlaceholderFormat(sq.Dollar).
 			RunWith(fr.db.Db).
 			ExecContext(ctx)
 		if err != nil {
-			return err
+			return ErrFailedDeleteFileFromDb
 		}
 		if a, _ := res.RowsAffected(); a == 0 {
-			return fmt.Errorf("%s with id=%s", ErrFailedDeleteFileFromDb.Error(), file.ID)
+			return ErrFailedDeleteFileFromDb
 		}
 		return nil
 	}, 5, 100*time.Millisecond)
