@@ -1,0 +1,18 @@
+syntax = "proto3";
+package crypto;
+option go_package = "pkg/messenger/crypto";
+
+message Request {
+  bytes data = 1;
+  // Любые 8 (!) байт для доп. безопасности.
+  bytes secretPhrase = 2;
+}
+
+message Response {
+  bytes data = 1;
+}
+
+service CryptoService {
+  rpc Encrypt (Request) returns (Response);
+  rpc Decrypt (Request) returns (Response);
+}

@@ -1,26 +1,40 @@
 services:
   file_service:
+    container_name: file_service
     build:
-      context: .
+      context: ./file_service
     env_file:
-      - ./config.env
+      - ./file_service/.env
     ports:
-      - "50051:50051"
+      - "50052:50052"
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_healthy
     networks:
+      - files_network
+      - default_network
+  crypto_service:
+    container_name: crypto_service
+    build:
+      context: ./crypto_service
+    env_file:
+      - ./crypto_service/.env
+    ports:
+      - "50053:50053"
+    networks:
+      - files_network
       - default_network
   postgres:
     container_name: postgres
     image: postgres:17.2-alpine
     env_file:
-      - ./config.env
+      - ./file_service/.env
     volumes:
-      - ./init/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./file_service/init/init.sql:/docker-entrypoint-initdb.d/init.sql
       - postgres_data:/var/lib/postgresql@latest/data
+# Раскоментируйте, если нужен прямой доступ во время разработки
     ports:
       - "5432:5432"
     healthcheck:
@@ -31,14 +45,17 @@ services:
       start_period: 10s
       start_interval: 5s
     networks:
-      - default_network
+      - files_network
+
   minio:
+    container_name: minio
     image: minio/minio:latest
     command: server --console-address ":9001" /data/
     env_file:
-      - ./config.env
+      - ./file_service/.env
     volumes:
       - minio_data:/data
+# Раскоментируйте, если нужен прямой доступ во время разработки
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -50,10 +67,12 @@ services:
       start_period: 10s
       start_interval: 5s
     networks:
-      - default_network
+      - files_network
+
 volumes:
   minio_data:
   postgres_data:
 
 networks:
+  files_network:
   default_network:
